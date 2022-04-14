@@ -1,31 +1,21 @@
 import os
 import numpy as np
 import random
+import sys
+import time
+from datetime import datetime
+import csv
+import re
+from scipy import rand
 
 
 class AlgorithmGeneric():
     def __init__(self) -> None:
-        self.instances = [['54 83 15 71 77 36 53 38 27 87 76 91 14 29 12 77 32 87 68 94',
-                          '79  3 11 99 56 70 99 60  5 56  3 61 73 75 47 14 21 86  5 77',
-                           '16 89 49 15 89 45 60 23 57 64  7  1 63 41 63 47 26 75 77 40',
-                           '66 58 31 68 78 91 13 59 49 85 85  9 39 41 56 40 54 77 51 31',
-                           '58 56 20 85 53 35 53 41 69 13 86 72  8 49 47 87 58 18 68 28'],
-                          ['74 21 58  4 21 28 58 83 31 61 94 44 97 94 66  6 37 22 99 83',
-                           '28  3 27 61 34 76 64 87 54 98 76 41 70 43 42 79 88 15 49 72',
-                           '89 52 56 13  7 32 32 98 46 60 23 87  7 36 26 85  7 34 36 48',
-                           '60 88 26 58 76 98 29 47 79 26 19 48 95 78 77 90 24 10 85 55',
-                           '54 66 12 57 70 82 99 84 16 41 23 11 68 58 30  5  5 39 58 31',
-                           '92 11 54 97 57 53 65 77 51 36 53 19 54 86 40 56 79 74 24  3',
-                           ' 9  8 88 72 27 22 50  2 49 82 93 96 43 13 60 11 37 91 84 67',
-                           ' 4 18 25 28 95 51 84 18  6 90 69 61 57  5 75  4 38 28  4 80',
-                           '25 15 91 49 56 10 62 70 76 99 58 83 84 64 74 14 18 48 96 86',
-                           '15 84  8 30 95 79  9 91 76 26 42 66 70 91 67  3 98  4 71 62']
-                          ]
-        self.populations = []
-        self.create_inital_population()
-        self.report = [dict() for _ in range(self.instances)]
-
-        print(self.report)
+        self.size_population = 100
+        self.instances = []
+        self.jobs = 10
+        self._read_instance()
+        self.report = []
 
     def makespan(self, instancia, solucao):
         nM = len(instancia)
@@ -39,58 +29,146 @@ class AlgorithmGeneric():
             for m in range(nM):
                 if tempo[m] < tempo[m-1] and m != 0:
                     tempo[m] = tempo[m-1]
-                tempo[m] += instancia[m][t-1]
+                tempo[m] += int(instancia[m][t-1])
+
         return tempo[nM-1]
 
     def _read_instance(self):
-        print("READ INSTANCES")
-        path = os.path.abspath(os.getcwd()) + "/arquivos/"
+        path = os.path.abspath(os.getcwd()) + "/flowshop/"
         filenames = next(os.walk(path), (None, None, []))[2]
         for filename in filenames:
+            file = "".join(re.findall("(\d+_\d+)", filename))
+            file = file.split("_")
             with open(path+filename, 'r') as filehandle:
-                # print(filehandle.readlines())
                 aux = []
                 for file in filehandle.readlines():
-                    aux.append(file)
-                    # print(file)
-                # info = [current_place.rstrip() for current_place in filehandle.readlines()]
-                # print(info)
-                print(aux)
-                self.instances.append(aux)
+                    aux.append(file.split())
+                self.instances.append({ 'filename': filename, 'n_jobs': file[0], 'm_numbers': file[1], 'data': aux })
 
     def create_inital_population(self):
-        population = ([random.choice(self.instances)
-                       for x in range(2) for i in range(2)])
+        population = []
+        for _ in range(self.size_population):
+            population.append(list(np.random.permutation(self.jobs)))
+        return population
 
-        self.populations.append(population)
+    def rate_population(self, instance, population):
+        aux = []
+        for idx, p in enumerate(population):
+            apt = self.makespan(instance['data'], list(p))
+            aux.append({'solucao': p, 'aptidao': apt})
+        return aux
 
+    def best_solution(self, fit_population):
+        return max(fit_population, key=lambda fit_population:fit_population['aptidao'])
 
+    def _binary_tournament(self, population):
+        parents = random.choices(population, k=len(population))
+        parents = sorted(parents, key=lambda fit_population:fit_population, reverse=True)
+        return parents[:50]
+
+    def select_population(self, population):
+        return self._binary_tournament(population)
+
+    def crossover(self, pop1):
+        pt = random.randint(1, len(pop1)-2)
+        return pop1[:pt] + pop1[:pt]
+
+    def mutation(self, n_population):
+        mutated_solution = list(n_population)
+        solution_length = len(n_population)
+        swap_positions = list(np.random.permutation(np.arange(solution_length))[:2])
+        first_job = n_population[swap_positions[0]]
+        second_job = n_population[swap_positions[1]]
+        mutated_solution[swap_positions[0]] = second_job
+        mutated_solution[swap_positions[1]] = first_job
+        return mutated_solution
+
+    def select_new_generation(self, population, n_population):
+        numbers_n_population = len(n_population)
+        new_pop = n_population[:numbers_n_population] + population[numbers_n_population:100]
+        return new_pop
+
+    def generate_csv(self):
+        print("GERANDO CSV.", self.report)
+        aux = []
+        solutions = self.report
+        for l in self.report:
+            valor_media = 0
+            media_execucao = 0
+            qtde = 0
+            aptidao = 0
+            for s in l['solutions']:
+                print('S*******' , s)
+                valor_media += s['aptidao']
+                media_execucao += s['tempoFinal']
+                aptidao += s['aptidao']
+                qtde += 1
+                
+            solution = solutions[0]['solutions']
+            aux.append({'X': l['filename'],
+                    'lower_bound': min(solution, key=lambda solution:solution['aptidao'])['aptidao'], 
+                    'upper_bound': max(solution, key=lambda solution:solution['aptidao'])['aptidao'], 
+                    'valor_médio': valor_media/qtde, 
+                    'desvio_padrão': np.std(aptidao),
+                    'media_execucao': media_execucao / qtde,
+                    'media_execucao_d': np.mean(media_execucao)})
+            
+        with open('IA-ALG_GEN_{}.csv'.format(datetime.now()), 'w') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=['X',
+                                                         'lower_bound', 
+                                                         'upper_bound',  
+                                                         'valor_médio', 
+                                                         'desvio_padrão', 
+                                                         'media_execucao',
+                                                         'media_execucao_d'
+                                                         ])
+            writer.writeheader()
+            writer.writerows(aux)
+            
+            
 def main():
-    algorithm_generic = AlgorithmGeneric()
-    # report = [dict() for instancia in range(instances[0])]
-    # # report = {index: value for index, value in enumerate(instances, start=0)}
-    # print(report)
+    AG = AlgorithmGeneric()
+    for instance in AG.instances:
+        print("ARQUIVO {}".format(instance['filename']))
+        time_max = 30
+        solutions = []
 
+        for _ in range(10):
+            solution = {'solucao': [], 'aptidao': sys.maxsize, 'tempoFinal': 0}
+            start_time = time.time()
+            population = AG.create_inital_population()
+            g_number = 0
+            while time.time() < (start_time + time_max * 1):
+                if g_number > 950:
+                    break
+                
+                fit_population = AG.rate_population(instance, population)
+                current_solution = AG.best_solution(fit_population)
+                
+                if solution['aptidao'] > current_solution['aptidao']:
+                    solution = current_solution                
+                
+                selected = AG.select_population(population)
+                new_selections = AG.crossover(selected)
+                new_selections = AG.mutation(new_selections)
+                
+                population = AG.select_new_generation(population, new_selections)
+                g_number+=1
+            solution['tempoFinal'] = time.time() - start_time
+            print("melhores solução", solution)
+            solutions.append(solution)
+        
+        
+        AG.report.append({
+            'solutions': solutions,
+            'filename' : instance['filename'],
+            'n_jobs'   : instance['n_jobs'],
+            'm_numbers': instance['m_numbers']
+        })
+    AG.generate_csv()
+
+    print("*** END ***")
 
 if __name__ == '__main__':
     main()
-
-
-# x = [
-#     ['54 83 15 71 77 36 53 38 27 87 76 91 14 29 12 77 32 87 68 94',
-#      '79  3 11 99 56 70 99 60  5 56  3 61 73 75 47 14 21 86  5 77',
-#      '16 89 49 15 89 45 60 23 57 64  7  1 63 41 63 47 26 75 77 40',
-#      '66 58 31 68 78 91 13 59 49 85 85  9 39 41 56 40 54 77 51 31',
-#      '58 56 20 85 53 35 53 41 69 13 86 72  8 49 47 87 58 18 68 28'],
-#     ['74', 21 58  4 21 28 58 83 31 61 94 44 97 94 66  6 37 22 99 83
-# 28  3 27 61 34 76 64 87 54 98 76 41 70 43 42 79 88 15 49 72
-# 89 52 56 13  7 32 32 98 46 60 23 87  7 36 26 85  7 34 36 48
-# 60 88 26 58 76 98 29 47 79 26 19 48 95 78 77 90 24 10 85 55
-# 54 66 12 57 70 82 99 84 16 41 23 11 68 58 30  5  5 39 58 31
-# 92 11 54 97 57 53 65 77 51 36 53 19 54 86 40 56 79 74 24  3
-#  9  8 88 72 27 22 50  2 49 82 93 96 43 13 60 11 37 91 84 67
-#  4 18 25 28 95 51 84 18  6 90 69 61 57  5 75  4 38 28  4 80
-# 25 15 91 49 56 10 62 70 76 99 58 83 84 64 74 14 18 48 96 86
-# 15 84  8 30 95 79  9 91 76 26 42 66 70 91 67  3 98  4 71 62
-# ]
-#     ]
+    
